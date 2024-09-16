@@ -1,3 +1,4 @@
+use std:: string;
 use std::path::PathBuf;
 
 use tokio_stream::wrappers::ReadDirStream;
@@ -176,7 +177,7 @@ impl Config {
             tooltips,
         } = toml::from_str(content.as_ref()).map_err(|e| Error::Parse(e.to_string()))?;
 
-        servers.read_password_files().await?;
+        servers.read_passwords().await?;
 
         let loaded_notifications = notifications.load_sounds()?;
 
@@ -305,10 +306,14 @@ fn default_tooltip() -> bool {
 pub enum Error {
     #[error("config could not be read: {0}")]
     Read(String),
+    #[error("failed to execute command {0}: {1}")]
+    Execute(String, String),
     #[error("{0}")]
     Io(String),
     #[error("{0}")]
     Parse(String),
+    #[error("UTF8 parsing error: {0}")]
+    UI(#[from] string::FromUtf8Error),
     #[error(transparent)]
     LoadSounds(#[from] audio::LoadError),
 }
