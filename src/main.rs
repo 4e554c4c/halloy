@@ -317,16 +317,13 @@ impl Halloy {
                     Some(dashboard::Event::ConfigReloaded(config)) => {
                         match config {
                             Ok(updated) => {
-                                let removed_servers = self
-                                    .servers
-                                    .keys()
-                                    .filter(|server| !updated.servers.contains(server))
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-
-                                self.servers = updated.servers.clone();
+                                let old_servers = mem::replace(&mut self.servers, updated.servers.clone());
                                 self.theme = appearance::theme(&updated.appearance.selected).into();
                                 self.config = updated;
+
+                                let removed_servers = old_servers
+                                    .keys()
+                                    .filter(|server| !self.servers.contains(server));
 
                                 for server in removed_servers {
                                     self.clients.quit(&server, None);
@@ -503,8 +500,9 @@ impl Halloy {
                                     self.clients.get_channel_users(&server, channel)
                                 };
 
+                                use data::client::Event;
                                 match event {
-                                    data::client::Event::Single(encoded, our_nick) => {
+                                    Event::Single(encoded, our_nick) => {
                                         if let Some(message) = data::Message::received(
                                             encoded,
                                             our_nick,
@@ -519,7 +517,7 @@ impl Halloy {
                                             );
                                         }
                                     }
-                                    data::client::Event::WithTarget(encoded, our_nick, target) => {
+                                    Event::WithTarget(encoded, our_nick, target) => {
                                         if let Some(message) = data::Message::received(
                                             encoded,
                                             our_nick,
@@ -537,7 +535,7 @@ impl Halloy {
                                             );
                                         }
                                     }
-                                    data::client::Event::Broadcast(broadcast) => match broadcast {
+                                    Event::Broadcast(broadcast) => match broadcast {
                                         data::client::Broadcast::Quit {
                                             user,
                                             comment,
@@ -631,7 +629,7 @@ impl Halloy {
                                             );
                                         }
                                     },
-                                    data::client::Event::Notification(
+                                    Event::Notification(
                                         encoded,
                                         our_nick,
                                         notification,
@@ -719,7 +717,7 @@ impl Halloy {
                                             }
                                         }
                                     }
-                                    data::client::Event::FileTransferRequest(request) => {
+                                    Event::FileTransferRequest(request) => {
                                         if let Some(command) = dashboard.receive_file_transfer(
                                             &server,
                                             request,
@@ -728,7 +726,7 @@ impl Halloy {
                                             commands.push(command.map(Message::Dashboard));
                                         }
                                     }
-                                    data::client::Event::UpdateReadMarker(target, read_marker) => {
+                                    Event::UpdateReadMarker(target, read_marker) => {
                                         commands.push(
                                             dashboard
                                                 .update_read_marker(
@@ -741,19 +739,21 @@ impl Halloy {
                                                 .map(Message::Dashboard),
                                         );
                                     }
-                                    data::client::Event::JoinedChannel(channel) => {
+                                    Event::JoinedChannel(channel) => {
                                         commands.push(
                                             dashboard
                                                 .channel_joined(server.clone(), channel)
                                                 .map(Message::Dashboard),
                                         );
                                     }
+                                    Event::NewBouncerNetwork(network) => {
+                                        //self.servers;
+                                    }
                                 }
                             }
 
                             commands
-                        })
-                        .collect::<Vec<_>>();
+                        }).collect::<Vec<_>>();
 
                     // Must be called after receiving message batches to ensure
                     // user & channel lists are in sync
@@ -838,7 +838,7 @@ impl Halloy {
                             if let Some(Modal::ServerConnect { server, config, .. }) =
                                 self.modal.take()
                             {
-                                let existing_entry = self.servers.entries().find(|entry| {
+                                let existing_entry = self.servers.primary_entries().find(|entry| {
                                     entry.server == server || entry.config.server == config.server
                                 });
 

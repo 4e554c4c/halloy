@@ -801,6 +801,7 @@ fn target(
         | Command::HELP(_)
         | Command::MODE(_, _, _)
         | Command::Numeric(_, _)
+        | Command::BOUNCER(..)
         | Command::Unknown(_, _)
         | Command::Raw(_) => Some(Target::Server {
             source: Source::Server(None),

@@ -1,3 +1,5 @@
+use enumn::N;
+
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -116,6 +118,9 @@ pub enum Command {
     /// <nickname>
     USERIP(String),
 
+    /// <subcommand> <params>...
+    BOUNCER(String, Vec<String>),
+
     Numeric(Numeric, Vec<String>),
     Unknown(String, Vec<String>),
     Raw(String),
@@ -146,6 +151,10 @@ impl Command {
             () => {
                 params.next()
             };
+        }
+
+        macro_rules! remaining {
+            () => { params.collect() };
         }
 
         match tag.as_str() {
@@ -181,7 +190,7 @@ impl Command {
             "STATS" if len > 0 => STATS(req!(), opt!()),
             "HELP" => HELP(opt!()),
             "INFO" => INFO,
-            "MODE" if len > 0 => MODE(req!(), opt!(), Some(params.collect())),
+            "MODE" if len > 0 => MODE(req!(), opt!(), Some(remaining!())),
             "PRIVMSG" if len > 1 => PRIVMSG(req!(), req!()),
             "NOTICE" if len > 1 => NOTICE(req!(), req!()),
             "WHO" if len > 0 => WHO(req!(), opt!(), opt!()),
@@ -202,7 +211,7 @@ impl Command {
             "USERHOST" => USERHOST(params.collect()),
             "WALLOPS" if len > 0 => WALLOPS(req!()),
             "ACCOUNT" if len > 0 => ACCOUNT(req!()),
-            "BATCH" if len > 0 => BATCH(req!(), params.collect()),
+            "BATCH" if len > 0 => BATCH(req!(), remaining!()),
             "CHGHOST" if len > 1 => CHGHOST(req!(), req!()),
             "CNOTICE" if len > 2 => CNOTICE(req!(), req!(), req!()),
             "CPRIVMSG" if len > 2 => CPRIVMSG(req!(), req!(), req!()),
@@ -211,6 +220,7 @@ impl Command {
             "MONITOR" if len > 0 => MONITOR(req!(), opt!()),
             "TAGMSG" if len > 0 => TAGMSG(req!()),
             "USERIP" if len > 0 => USERIP(req!()),
+            "BOUNCER" => BOUNCER(req!(), remaining!()),
             _ => Self::Unknown(tag, params.collect()),
         }
     }
@@ -272,6 +282,7 @@ impl Command {
             Command::MONITOR(a, b) => std::iter::once(a).chain(b).collect(),
             Command::TAGMSG(a) => vec![a],
             Command::USERIP(a) => vec![a],
+            Command::BOUNCER(_, params) => params,
             Command::Numeric(_, params) => params,
             Command::Unknown(_, params) => params,
             Command::Raw(_) => vec![],
@@ -332,6 +343,7 @@ impl Command {
             MONITOR(_, _) => "MONITOR".to_string(),
             TAGMSG(_) => "TAGMSG".to_string(),
             USERIP(_) => "USERIP".to_string(),
+            BOUNCER(..) => "BOUNCER".to_string(),
             Numeric(numeric, _) => format!("{:03}", *numeric as u16),
             Unknown(tag, _) => tag.clone(),
             Raw(_) => "".to_string(),
@@ -340,7 +352,7 @@ impl Command {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, N)]
 #[repr(u16)]
 pub enum Numeric {
     RPL_WELCOME = 1,
@@ -486,147 +498,6 @@ impl TryFrom<u16> for Numeric {
     type Error = ();
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        use Numeric::*;
-
-        Ok(match value {
-            1 => RPL_WELCOME,
-            2 => RPL_YOURHOST,
-            3 => RPL_CREATED,
-            4 => RPL_MYINFO,
-            5 => RPL_ISUPPORT,
-            10 => RPL_BOUNCE,
-            212 => RPL_STATSCOMMANDS,
-            219 => RPL_ENDOFSTATS,
-            242 => RPL_STATSUPTIME,
-            221 => RPL_UMODEIS,
-            251 => RPL_LUSERCLIENT,
-            252 => RPL_LUSEROP,
-            253 => RPL_LUSERUNKNOWN,
-            254 => RPL_LUSERCHANNELS,
-            255 => RPL_LUSERME,
-            256 => RPL_ADMINME,
-            257 => RPL_ADMINLOC1,
-            258 => RPL_ADMINLOC2,
-            259 => RPL_ADMINEMAIL,
-            263 => RPL_TRYAGAIN,
-            265 => RPL_LOCALUSERS,
-            266 => RPL_GLOBALUSERS,
-            276 => RPL_WHOISCERTFP,
-            300 => RPL_NONE,
-            301 => RPL_AWAY,
-            302 => RPL_USERHOST,
-            305 => RPL_UNAWAY,
-            306 => RPL_NOWAWAY,
-            352 => RPL_WHOREPLY,
-            315 => RPL_ENDOFWHO,
-            307 => RPL_WHOISREGNICK,
-            311 => RPL_WHOISUSER,
-            312 => RPL_WHOISSERVER,
-            313 => RPL_WHOISOPERATOR,
-            314 => RPL_WHOWASUSER,
-            317 => RPL_WHOISIDLE,
-            318 => RPL_ENDOFWHOIS,
-            319 => RPL_WHOISCHANNELS,
-            320 => RPL_WHOISSPECIAL,
-            321 => RPL_LISTSTART,
-            322 => RPL_LIST,
-            323 => RPL_LISTEND,
-            324 => RPL_CHANNELMODEIS,
-            329 => RPL_CREATIONTIME,
-            330 => RPL_WHOISACCOUNT,
-            331 => RPL_NOTOPIC,
-            332 => RPL_TOPIC,
-            333 => RPL_TOPICWHOTIME,
-            336 => RPL_INVITELIST,
-            337 => RPL_ENDOFINVITELIST,
-            338 => RPL_WHOISACTUALLY,
-            341 => RPL_INVITING,
-            346 => RPL_INVEXLIST,
-            347 => RPL_ENDOFINVEXLIST,
-            348 => RPL_EXCEPTLIST,
-            349 => RPL_ENDOFEXCEPTLIST,
-            351 => RPL_VERSION,
-            353 => RPL_NAMREPLY,
-            354 => RPL_WHOSPCRPL,
-            366 => RPL_ENDOFNAMES,
-            364 => RPL_LINKS,
-            365 => RPL_ENDOFLINKS,
-            367 => RPL_BANLIST,
-            368 => RPL_ENDOFBANLIST,
-            369 => RPL_ENDOFWHOWAS,
-            371 => RPL_INFO,
-            374 => RPL_ENDOFINFO,
-            375 => RPL_MOTDSTART,
-            372 => RPL_MOTD,
-            376 => RPL_ENDOFMOTD,
-            378 => RPL_WHOISHOST,
-            379 => RPL_WHOISMODES,
-            381 => RPL_YOUREOPER,
-            382 => RPL_REHASHING,
-            391 => RPL_TIME,
-            400 => ERR_UNKNOWNERROR,
-            401 => ERR_NOSUCHNICK,
-            402 => ERR_NOSUCHSERVER,
-            403 => ERR_NOSUCHCHANNEL,
-            404 => ERR_CANNOTSENDTOCHAN,
-            405 => ERR_TOOMANYCHANNELS,
-            406 => ERR_WASNOSUCHNICK,
-            409 => ERR_NOORIGIN,
-            411 => ERR_NORECIPIENT,
-            412 => ERR_NOTEXTTOSEND,
-            417 => ERR_INPUTTOOLONG,
-            421 => ERR_UNKNOWNCOMMAND,
-            422 => ERR_NOMOTD,
-            431 => ERR_NONICKNAMEGIVEN,
-            432 => ERR_ERRONEUSNICKNAME,
-            433 => ERR_NICKNAMEINUSE,
-            436 => ERR_NICKCOLLISION,
-            441 => ERR_USERNOTINCHANNEL,
-            442 => ERR_NOTONCHANNEL,
-            443 => ERR_USERONCHANNEL,
-            451 => ERR_NOTREGISTERED,
-            461 => ERR_NEEDMOREPARAMS,
-            462 => ERR_ALREADYREGISTERED,
-            464 => ERR_PASSWDMISMATCH,
-            465 => ERR_YOUREBANNEDCREEP,
-            471 => ERR_CHANNELISFULL,
-            472 => ERR_UNKNOWNMODE,
-            473 => ERR_INVITEONLYCHAN,
-            474 => ERR_BANNEDFROMCHAN,
-            475 => ERR_BADCHANNELKEY,
-            476 => ERR_BADCHANMASK,
-            477 => ERR_NOCHANMODES,
-            481 => ERR_NOPRIVILEGES,
-            482 => ERR_CHANOPRIVSNEEDED,
-            483 => ERR_CANTKILLSERVER,
-            491 => ERR_NOOPERHOST,
-            501 => ERR_UMODEUNKNOWNFLAG,
-            502 => ERR_USERSDONTMATCH,
-            524 => ERR_HELPNOTFOUND,
-            525 => ERR_INVALIDKEY,
-            670 => RPL_STARTTLS,
-            671 => RPL_WHOISSECURE,
-            691 => ERR_STARTTLS,
-            696 => ERR_INVALIDMODEPARAM,
-            704 => RPL_HELPSTART,
-            705 => RPL_HELPTXT,
-            706 => RPL_ENDOFHELP,
-            723 => ERR_NOPRIVS,
-            730 => RPL_MONONLINE,
-            731 => RPL_MONOFFLINE,
-            732 => RPL_MONLIST,
-            733 => RPL_ENDOFMONLIST,
-            734 => ERR_MONLISTFULL,
-            900 => RPL_LOGGEDIN,
-            901 => RPL_LOGGEDOUT,
-            902 => ERR_NICKLOCKED,
-            903 => RPL_SASLSUCCESS,
-            904 => ERR_SASLFAIL,
-            905 => ERR_SASLTOOLONG,
-            906 => ERR_SASLABORTED,
-            907 => ERR_SASLALREADY,
-            908 => RPL_SASLMECHS,
-            _ => return Err(()),
-        })
+        Self::n(value).ok_or(())
     }
 }

@@ -7,6 +7,7 @@ use std::str::FromStr;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Kind {
     AWAYLEN,
+    BOUNCER_NETID,
     CHANLIMIT,
     CHANNELLEN,
     CNOTICE,
@@ -66,6 +67,7 @@ impl FromStr for Operation {
                         "BOT" => Ok(Operation::Add(Parameter::BOT(parse_required_letter(
                             value, None,
                         )?))),
+                        "BOUNCER_NETID" => Ok(Operation::Add(Parameter::BOUNCER_NETID(value.to_owned()))),
                         "CALLERID" => Ok(Operation::Add(Parameter::CALLERID(
                             parse_required_letter(value, Some(DEFAULT_CALLER_ID_LETTER))?,
                         ))),
@@ -521,6 +523,7 @@ pub enum Parameter {
     ACCOUNTEXTBAN(Vec<String>),
     AWAYLEN(Option<u16>),
     BOT(char),
+    BOUNCER_NETID(String),
     CALLERID(char),
     CASEMAPPING(CaseMap),
     CHANLIMIT(Vec<ChannelLimit>),

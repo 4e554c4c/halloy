@@ -8,6 +8,7 @@ use irc::proto::{self, command, Command};
 use irc::{codec, connection, Connection};
 use tokio::time::{self, Instant, Interval};
 
+use crate::bouncer::BouncerNetwork;
 use crate::client::Client;
 use crate::server::Server;
 use crate::time::Posix;
@@ -70,24 +71,25 @@ struct Stream {
 }
 
 pub fn run(
-    server: server::Entry,
+    entry: server::Entry,
     proxy: Option<config::Proxy>,
 ) -> impl futures::Stream<Item = Update> {
     let (sender, receiver) = mpsc::unbounded();
 
     // Spawn to unblock backend from iced stream which has backpressure
-    let runner = stream::once(async { tokio::spawn(_run(server, proxy, sender)).await })
+    let runner = stream::once(async { tokio::spawn(_run(entry, proxy, sender)).await })
         .map(|_| unreachable!());
 
     stream::select(receiver, runner)
 }
 
-async fn _run(
-    server: server::Entry,
+async fn _run<'a>(
+    entry: server::Entry,
     proxy: Option<config::Proxy>,
     sender: mpsc::UnboundedSender<Update>,
 ) -> Never {
-    let server::Entry { server, config } = server;
+
+    let server::Entry { server, config , bouncer_network } = entry;
 
     let reconnect_delay = Duration::from_secs(config.reconnect_delay);
 
@@ -113,7 +115,7 @@ async fn _run(
                     }
                 }
 
-                match connect(server.clone(), config.clone(), proxy.clone()).await {
+                match connect(server.clone(), config.clone(), bouncer_network, proxy.clone()).await {
                     Ok((stream, client)) => {
                         log::info!("[{server}] connected");
 
@@ -274,6 +276,7 @@ async fn _run(
 async fn connect(
     server: Server,
     config: config::Server,
+    bouncer_network: Option<BouncerNetwork>,
     proxy: Option<config::Proxy>,
 ) -> Result<(Stream, Client), connection::Error> {
     let connection = Connection::new(config.connection(proxy), irc::Codec).await?;

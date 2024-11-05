@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::{fmt, str};
+use std::{fmt, iter, str};
 use tokio::fs;
 use tokio::process::Command;
 
@@ -7,6 +7,7 @@ use futures::channel::mpsc::Sender;
 use irc::proto;
 use serde::{Deserialize, Serialize};
 
+use crate::bouncer::BouncerNetwork;
 use crate::config;
 use crate::config::server::Sasl;
 use crate::config::Error;
@@ -38,19 +39,45 @@ impl AsRef<str> for Server {
 pub struct Entry {
     pub server: Server,
     pub config: config::Server,
+    pub bouncer_network: Option<BouncerNetwork>,
 }
 
-impl<'a> From<(&'a Server, &'a config::Server)> for Entry {
-    fn from((server, config): (&'a Server, &'a config::Server)) -> Self {
-        Self {
+impl Entry {
+    fn primary_entry((server, v): (&Server, &MapVal)) -> Self {
+        Entry {
             server: server.clone(),
-            config: config.clone(),
+            config: v.config.clone(),
+            bouncer_network: None,
+        }
+    }
+    fn from<'a>((server, v): (&'a Server, &'a MapVal)) -> impl Iterator<Item = Self> + 'a {
+        iter::once(Self::primary_entry((server, v))).chain(v.children.iter().map(|network| Entry {
+            server: server.clone(),
+            config: v.config.clone(),
+            bouncer_network: Some(network.clone()),
+        }))
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
+struct MapVal {
+    #[serde(flatten)]
+    config: config::Server,
+    #[serde(skip)]
+    children: Vec<BouncerNetwork>,
+}
+
+impl From<config::Server> for MapVal {
+    fn from(config: config::Server) -> Self {
+        Self {
+            config,
+            children: vec![],
         }
     }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct Map(BTreeMap<Server, config::Server>);
+pub struct Map(BTreeMap<Server, MapVal>);
 
 async fn read_from_command(pass_command: &str) -> Result<String, Error> {
     let output = if cfg!(target_os = "windows") {
@@ -79,7 +106,13 @@ async fn read_from_command(pass_command: &str) -> Result<String, Error> {
 
 impl Map {
     pub fn insert(&mut self, name: Server, server: config::Server) {
-        self.0.insert(name, server);
+        self.0.insert(name, MapVal::from(server));
+    }
+
+    pub fn insert_bouncer_network(&mut self, name: &Server, network: BouncerNetwork) {
+        if let Some(entry) = self.0.get_mut(name) {
+            entry.children.push(network);
+        }
     }
 
     pub fn remove(&mut self, server: &Server) {
@@ -94,12 +127,16 @@ impl Map {
         self.0.keys()
     }
 
+    pub fn primary_entries(&self) -> impl Iterator<Item = Entry> + '_ {
+        self.entries().filter(|e| e.bouncer_network.is_none())
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = Entry> + '_ {
-        self.0.iter().map(Entry::from)
+        self.0.iter().flat_map(Entry::from)
     }
 
     pub async fn read_passwords(&mut self) -> Result<(), Error> {
-        for (_, config) in self.0.iter_mut() {
+        for (_, MapVal { config, .. }) in self.0.iter_mut() {
             if let Some(pass_file) = &config.password_file {
                 if config.password.is_some() || config.password_command.is_some() {
                     return Err(Error::DuplicatePassword);

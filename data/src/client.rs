@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::time::{Duration, Instant};
 
+use crate::bouncer::BouncerNetwork;
 use crate::history::ReadMarker;
 use crate::message::server_time;
 use crate::time::Posix;
@@ -86,10 +87,12 @@ pub enum Event {
     FileTransferRequest(file_transfer::ReceiveRequest),
     UpdateReadMarker(String, ReadMarker),
     JoinedChannel(String),
+    NewBouncerNetwork(BouncerNetwork),
 }
 
 pub struct Client {
     server: Server,
+    bouncer_network: Option<(String, BouncerNetwork)>,
     config: config::Server,
     handle: server::Handle,
     alt_nick: Option<usize>,
@@ -107,6 +110,7 @@ pub struct Client {
     supports_account_notify: bool,
     supports_extended_join: bool,
     supports_read_marker: bool,
+    supports_bouncer_networks: bool,
     highlight_blackout: HighlightBlackout,
     registration_required_channels: Vec<String>,
     isupport: HashMap<isupport::Kind, isupport::Parameter>,
@@ -117,6 +121,20 @@ impl fmt::Debug for Client {
         f.debug_struct("Client").finish()
     }
 }
+
+const UNCONDITIONAL_CAPS: &[&str] = &[
+    "away-notify",
+    "batch",
+    "chghost",
+    "draft/read-marker",
+    "extended-monitor",
+    "invite-notify",
+    "message-tags",
+    "multi-prefix",
+    "server-time",
+    "soju.im/bouncer-networks",
+    "userhost-in-names",
+];
 
 impl Client {
     pub fn new(
@@ -144,6 +162,7 @@ impl Client {
         Self {
             server,
             config,
+            bouncer_network: None,
             handle: sender,
             resolved_nick: None,
             alt_nick: None,
@@ -159,6 +178,7 @@ impl Client {
             supports_away_notify: false,
             supports_account_notify: false,
             supports_extended_join: false,
+            supports_bouncer_networks: false,
             supports_read_marker: false,
             highlight_blackout: HighlightBlackout::Blackout(Instant::now()),
             registration_required_channels: vec![],
@@ -223,6 +243,10 @@ impl Client {
         }
 
         events
+    }
+
+    fn is_primary(&self) -> bool {
+        self.bouncer_network.is_none()
     }
 
     fn handle(
@@ -315,83 +339,65 @@ impl Client {
                     )]);
                 }
             }
-            Command::CAP(_, sub, a, b) if sub == "LS" => {
-                let (caps, asterisk) = match (a, b) {
-                    (Some(caps), None) => (caps, None),
-                    (Some(asterisk), Some(caps)) => (caps, Some(asterisk)),
-                    // Unreachable
-                    (None, None) | (None, Some(_)) => return None,
-                };
-
+            Command::BOUNCER(subcommand, params) if subcommand == "NETWORK" => {
+                if let [netid, network] = params.as_slice() {
+                    return Some(vec![Event::NewBouncerNetwork(BouncerNetwork::parse(
+                        netid.clone(),
+                        network,
+                    )?)]);
+                } else {
+                    // XXX invalid message
+                }
+            }
+            Command::CAP(_, sub, Some(_asterisk), Some(caps)) if sub == "LS" => {
+                self.listed_caps.extend(caps.split(' ').map(String::from));
+            }
+            // Finished with LS
+            Command::CAP(_, sub, Some(caps), None) if sub == "LS" => {
                 self.listed_caps.extend(caps.split(' ').map(String::from));
 
-                // Finished
-                if asterisk.is_none() {
-                    let mut requested = vec![];
+                let contains = |s: &str| self.listed_caps.iter().any(|cap| cap == s);
 
-                    let contains = |s| self.listed_caps.iter().any(|cap| cap == s);
+                let mut requested: Vec<&str> = UNCONDITIONAL_CAPS
+                    .iter()
+                    .copied()
+                    .filter(|c| contains(c))
+                    .collect();
 
-                    if contains("invite-notify") {
-                        requested.push("invite-notify");
-                    }
-                    if contains("userhost-in-names") {
-                        requested.push("userhost-in-names");
-                    }
-                    if contains("away-notify") {
-                        requested.push("away-notify");
-                    }
-                    if contains("message-tags") {
-                        requested.push("message-tags");
-                    }
-                    if contains("server-time") {
-                        requested.push("server-time");
-                    }
-                    if contains("chghost") {
-                        requested.push("chghost");
-                    }
-                    if contains("extended-monitor") {
-                        requested.push("extended-monitor");
-                    }
-                    if contains("account-notify") {
-                        requested.push("account-notify");
+                if contains("account-notify") {
+                    requested.push("account-notify");
 
-                        if contains("extended-join") {
-                            requested.push("extended-join");
-                        }
+                    if contains("extended-join") {
+                        requested.push("extended-join");
                     }
-                    if contains("batch") {
-                        requested.push("batch");
-                    }
-                    if contains("labeled-response") {
-                        requested.push("labeled-response");
+                }
+                if contains("labeled-response") {
+                    requested.push("labeled-response");
 
-                        // We require labeled-response so we can properly tag echo-messages
-                        if contains("echo-message") {
-                            requested.push("echo-message");
-                        }
+                    // We require labeled-response so we can properly tag echo-messages
+                    if contains("echo-message") {
+                        requested.push("echo-message");
                     }
-                    if self.listed_caps.iter().any(|cap| cap.starts_with("sasl")) {
-                        requested.push("sasl");
-                    }
-                    if contains("multi-prefix") {
-                        requested.push("multi-prefix");
-                    }
-                    if contains("draft/read-marker") {
-                        requested.push("draft/read-marker");
-                    }
+                }
+                if self.listed_caps.iter().any(|cap| cap.starts_with("sasl")) {
+                    requested.push("sasl");
+                }
 
-                    if !requested.is_empty() {
-                        // Request
-                        self.registration_step = RegistrationStep::Req;
+                if contains("soju.im/bouncer-networks-notify") && self.is_primary() {
+                    requested.push("soju.im/bouncer-networks-notify");
+                }
 
-                        for message in group_capability_requests(&requested) {
-                            let _ = self.handle.try_send(message);
-                        }
-                    } else {
-                        // If none requested, end negotiation
-                        self.registration_step = RegistrationStep::End;
-                        let _ = self.handle.try_send(command!("CAP", "END"));
+                if !requested.is_empty() {
+                    // Request
+                    self.registration_step = RegistrationStep::Req;
+
+                    for message in group_capability_requests(&requested) {
+                        let _ = self.handle.try_send(message);
                     }
+                } else {
+                    // If none requested, end negotiation
+                    self.registration_step = RegistrationStep::End;
+                    let _ = self.handle.try_send(command!("CAP", "END"));
                 }
             }
             Command::CAP(_, sub, a, b) if sub == "ACK" => {
@@ -414,6 +420,9 @@ impl Client {
                 }
                 if caps.contains(&"draft/read-marker") {
                     self.supports_read_marker = true;
+                }
+                if caps.contains(&"draft/read-marker") {
+                    self.supports_bouncer_networks = true;
                 }
 
                 let supports_sasl = caps.iter().any(|cap| cap.contains("sasl"));
@@ -443,33 +452,16 @@ impl Client {
 
                 let new_caps = caps.split(' ').map(String::from).collect::<Vec<String>>();
 
-                let mut requested = vec![];
-
                 let newly_contains = |s| new_caps.iter().any(|cap| cap == s);
 
                 let contains = |s| self.listed_caps.iter().any(|cap| cap == s);
 
-                if newly_contains("invite-notify") {
-                    requested.push("invite-notify");
-                }
-                if newly_contains("userhost-in-names") {
-                    requested.push("userhost-in-names");
-                }
-                if newly_contains("away-notify") {
-                    requested.push("away-notify");
-                }
-                if newly_contains("message-tags") {
-                    requested.push("message-tags");
-                }
-                if newly_contains("server-time") {
-                    requested.push("server-time");
-                }
-                if newly_contains("chghost") {
-                    requested.push("chghost");
-                }
-                if newly_contains("extended-monitor") {
-                    requested.push("extended-monitor");
-                }
+                let mut requested: Vec<&str> = UNCONDITIONAL_CAPS
+                    .iter()
+                    .copied()
+                    .filter(|c| newly_contains(*c))
+                    .collect();
+
                 if contains("account-notify") || newly_contains("account-notify") {
                     if newly_contains("account-notify") {
                         requested.push("account-notify");
@@ -478,9 +470,6 @@ impl Client {
                     if newly_contains("extended-join") {
                         requested.push("extended-join");
                     }
-                }
-                if newly_contains("batch") {
-                    requested.push("batch");
                 }
                 if contains("labeled-response") || newly_contains("labeled-response") {
                     if newly_contains("labeled-response") {
@@ -491,12 +480,6 @@ impl Client {
                     if newly_contains("echo-message") {
                         requested.push("echo-message");
                     }
-                }
-                if newly_contains("multi-prefix") {
-                    requested.push("multi-prefix");
-                }
-                if newly_contains("draft/read-marker") {
-                    requested.push("draft/read-marker");
                 }
 
                 if !requested.is_empty() {
@@ -536,6 +519,15 @@ impl Client {
                     log::info!("[{}] sasl auth: {}", self.server, sasl.command());
 
                     let _ = self.handle.try_send(command!("AUTHENTICATE", sasl.param()));
+
+                    // now that we are authenticated, we can connect to our desired network
+                    if let Some(network) = &self.bouncer_network {
+                        let _ = self.handle.try_send(command!(
+                            "BOUNCER",
+                            "BIND",
+                            network.1.id.as_str()
+                        ));
+                    }
                     self.registration_step = RegistrationStep::End;
                     let _ = self.handle.try_send(command!("CAP", "END"));
                 }
@@ -742,11 +734,19 @@ impl Client {
                 // Updated actual nick
                 let nick = args.first()?;
                 self.resolved_nick = Some(nick.to_string());
+            }
+            // end of registration (including ISUPPORT) is indicated by either RPL_ENDOFMOTD or
+            // ERR_NOMOTD:  https://modern.ircdocs.horse/#connection-registration
+            Command::Numeric(RPL_ENDOFMOTD, _args) | Command::Numeric(ERR_NOMOTD, _args) => {
+                let Some(nick) = self.resolved_nick.as_deref() else {
+                    log::warn!("Error, registration completed without RPL_WELCOME completed");
+                    return None;
+                };
 
                 // Send nick password & ghost
                 if let Some(nick_pass) = self.config.nick_password.as_ref() {
                     // Try ghost recovery if we couldn't claim our nick
-                    if self.config.should_ghost && nick != &self.config.nickname {
+                    if self.config.should_ghost && nick != self.config.nickname {
                         for sequence in &self.config.ghost_sequence {
                             let _ = self.handle.try_send(command!(
                                 "PRIVMSG",
@@ -803,6 +803,11 @@ impl Client {
                             let _ = self.handle.try_send(command.into());
                         };
                     };
+                }
+
+                // Check for bouncer network info
+                if self.is_primary() && self.supports_bouncer_networks {
+                    let _ = self.handle.try_send(command!("BOUNCER", "LISTNETWORKS"));
                 }
 
                 // Send JOIN
@@ -1412,31 +1417,49 @@ impl HighlightBlackout {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct MapKey {
+    server: Server,
+    netid: Option<String>,
+}
+
+impl From<&Client> for MapKey {
+    fn from(client: &Client) -> Self {
+        MapKey(
+            client.server.clone(),
+            client.bouncer_network.as_ref().map(|(_, b)| b.id.clone()),
+        )
+    }
+}
+
 #[derive(Debug, Default)]
-pub struct Map(BTreeMap<Server, State>);
+pub struct Map(BTreeMap<MapKey, State>);
 
 impl Map {
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn disconnected(&mut self, server: Server) {
-        self.0.insert(server, State::Disconnected);
+    pub fn disconnected(&mut self, server: Server, netid: Option<String>) {
+        self.0.insert(MapKey { server, netid }, State::Disconnected);
     }
 
-    pub fn ready(&mut self, server: Server, client: Client) {
-        self.0.insert(server, State::Ready(client));
+    pub fn ready(&mut self, server: Server, netid: Option<string>, client: Client) {
+        self.0
+            .insert(MapKey { server, netid }, State::Ready(client));
     }
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    pub fn remove(&mut self, server: &Server) -> Option<Client> {
-        self.0.remove(server).and_then(|state| match state {
-            State::Disconnected => None,
-            State::Ready(client) => Some(client),
-        })
+    pub fn remove(&mut self, server: &Server, netid: Option<String>) -> Option<Client> {
+        self.0
+            .remove(MapKey { server, netid })
+            .and_then(|state| match state {
+                State::Disconnected => None,
+                State::Ready(client) => Some(client),
+            })
     }
 
     pub fn client(&self, server: &Server) -> Option<&Client> {
@@ -1563,7 +1586,7 @@ impl Map {
         })
     }
 
-    pub fn iter(&self) -> std::collections::btree_map::Iter<Server, State> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Server, &State)> {
         self.0.iter()
     }
 

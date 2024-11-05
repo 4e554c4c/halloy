@@ -5,6 +5,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+enumn = "0.1.14"
 itertools = "0.12.1"
 nom = "7.1"
 thiserror = "1.0.30"
