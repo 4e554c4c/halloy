@@ -191,13 +191,14 @@ pub enum Direction {
     Received,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Reaction {
     pub target: Target,
     pub sender: Nick,
     pub text: String,
     pub id: Option<MsgId>,
     pub in_reply_to: MsgId,
+    pub unreact: bool,
 }
 
 impl Reaction {
@@ -209,6 +210,7 @@ impl Reaction {
         my_nick: Nick,
         in_reply_to: MsgId,
         text: String,
+        unreact: bool
     ) -> Self {
         Self {
             sender: my_nick,
@@ -216,16 +218,23 @@ impl Reaction {
             in_reply_to,
             text,
             id: None,
+            unreact,
         }
     }
-}
-
-// two reactions are essentially equal if their text, target and nick match
-impl PartialEq<Reaction> for Reaction {
-    fn eq(&self, other: &Reaction) -> bool {
-        self.sender == other.sender
-            && self.text == other.text
-            && self.in_reply_to == other.in_reply_to
+    pub fn unreact(
+        target: Target,
+        my_nick: Nick,
+        in_reply_to: MsgId,
+        text: String,
+    ) -> Self {
+        Self {
+            sender: my_nick,
+            target,
+            in_reply_to,
+            text,
+            id: None,
+            unreact: true,
+        }
     }
 }
 
@@ -311,6 +320,23 @@ pub fn decode<'a>(
             text,
             id,
             in_reply_to: in_reply_to?,
+            unreact: false,
+        }));
+    }
+    if let Some(text) = encoded
+        .0
+        .tags
+        .iter()
+        .find(|tag| tag.key == "+draft/unreact")
+        .map(|tag| tag.val().to_owned())
+    {
+        return Some(Decoded::Reaction(Reaction {
+            sender: target.nick()?.to_owned(),
+            target,
+            text,
+            id,
+            in_reply_to: in_reply_to?,
+            unreact: true,
         }));
     }
     let content = content(
