@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Connect with ZNC</title>
+        <title>Sidebar</title>
 
 
         <!-- Custom HTML head -->
@@ -142,7 +142,7 @@
                         <a href="https://github.com/squidowl/halloy" title="Git repository" aria-label="Git repository">
                             <i id="git-repository-button" class="fa fa-github"></i>
                         </a>
-                        <a href="https://github.com/squidowl/halloy/edit/main/book/src/guides/connect-with-znc.md" title="Suggest an edit" aria-label="Suggest an edit">
+                        <a href="https://github.com/squidowl/halloy/edit/main/book/src/configuration/sidebar.md" title="Suggest an edit" aria-label="Suggest an edit">
                             <i id="git-edit-button" class="fa fa-edit"></i>
                         </a>
 
@@ -171,32 +171,67 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="connect-with-znc"><a class="header" href="#connect-with-znc">Connect with ZNC</a></h1>
-<p>To connect with a <a href="https://wiki.znc.in/ZNC"><strong>ZNC</strong></a> bouncer, the configuration below can be used as a template. Simply change so it fits your credentials.</p>
-<pre><code class="language-toml">[servers.libera]
-nickname = "&lt;znc-user&gt;/&lt;znc-network&gt;"
-server = "znc.example.com"
-password = "&lt;your-password&gt;"
+                        <h1 id="sidebar"><a class="header" href="#sidebar"><code>[sidebar]</code></a></h1>
+<p>Sidebar settings for Halloy.</p>
+<h2 id="unread_indicator"><a class="header" href="#unread_indicator"><code>unread_indicator</code></a></h2>
+<p>Unread buffer indicator style.</p>
+<pre><code class="language-toml"># Type: string
+# Values: "dot", "title", "none"
+# Default: "dot"
 
-# Depending on your ZNC setup you may need to apply these extra settings:
+[sidebar]
+unread_indicator = "dot"
+</code></pre>
+<h2 id="position"><a class="header" href="#position"><code>position</code></a></h2>
+<p>Sidebar position within the application window.</p>
+<pre><code class="language-toml"># Type: string
+# Values: "left", "top", "right", "bottom"
+# Default: "left"
 
-# Does your znc use a self-signed or expired certificate? See: 
-# https://halloy.chat/configuration/servers.html#dangerously_accept_invalid_certs
+[sidebar]
+position = "left"
+</code></pre>
+<h2 id="max_width"><a class="header" href="#max_width"><code>max_width</code></a></h2>
+<p>Specify sidebar max width in pixels. Only used if <code>position</code> is <code>"left"</code> or <code>"right"</code>.</p>
+<pre><code class="language-toml"># Type: integer
+# Values: any positive integer
+# Default: not set
 
-# Does your znc listen on a different port? See: 
-# https://halloy.chat/configuration/servers.html#port
+[sidebar]
+max_width = 200
+</code></pre>
+<h2 id="show_menu_button"><a class="header" href="#show_menu_button"><code>show_menu_button</code></a></h2>
+<p>Show or hide the user menu button in the sidebar.</p>
+<pre><code class="language-toml"># Type: bool
+# Values: true, false
+# Default: true
 
+[sidebar]
+show_menu_button = true
+</code></pre>
+<h2 id="order_by"><a class="header" href="#order_by"><code>order_by</code></a></h2>
+<p>Ordering that servers are listed in the sidebar uses to select from matching users.</p>
+<ul>
+<li><code>"config"</code>: The same order they are specified in the configuration file.</li>
+<li><code>"alpha"</code>: Case-insensitive alphabetical ordering.</li>
+</ul>
+<pre><code class="language-toml"># Type: string
+# Values: "alpha", "config"
+# Default: "alpha"
+
+[sidebar]
+order_by = "config"
 </code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../guides/connect-with-soju.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../configuration/servers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../guides/portable-mode.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../configuration/themes/index.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -206,11 +241,11 @@ password = "&lt;your-password&gt;"
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../guides/connect-with-soju.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../configuration/servers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../guides/portable-mode.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../configuration/themes/index.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
