@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use data::dashboard::BufferAction;
+use data::message::MsgId;
 use data::preview::{self, Previews};
 use data::target::{self, Target};
 use data::{Config, Server, buffer, history, message};
@@ -28,6 +29,7 @@ pub enum Event {
     MarkAsRead(history::Kind),
     OpenUrl(String),
     ImagePreview(PathBuf, url::Url),
+    Reacted { msgid: MsgId, text: String },
 }
 
 pub fn view<'a>(
@@ -175,6 +177,9 @@ impl Query {
                     }
                     scroll_view::Event::ImagePreview(path, url) => {
                         Some(Event::ImagePreview(path, url))
+                    }
+                    scroll_view::Event::Reacted { msgid, text } => {
+                        Some(Event::Reacted { msgid, text })
                     }
                 });
 

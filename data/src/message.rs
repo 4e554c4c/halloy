@@ -174,6 +174,15 @@ impl Target {
             _ => None,
         }
     }
+
+    pub fn from_target(target: crate::Target, source: Source) -> Self {
+        match target {
+            crate::Target::Channel(channel) => {
+                Target::Channel { channel, source }
+            }
+            crate::Target::Query(query) => Target::Query { query, source },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -195,14 +204,28 @@ impl Reaction {
     pub fn with_target(self, target: Target) -> Self {
         Self { target, ..self }
     }
+    pub fn sent(
+        target: Target,
+        my_nick: Nick,
+        in_reply_to: MsgId,
+        text: String,
+    ) -> Self {
+        Self {
+            sender: my_nick,
+            target,
+            in_reply_to,
+            text,
+            id: None,
+        }
+    }
 }
 
 // two reactions are essentially equal if their text, target and nick match
 impl PartialEq<Reaction> for Reaction {
     fn eq(&self, other: &Reaction) -> bool {
         self.sender == other.sender
-        && self.text == other.text
-        && self.in_reply_to == other.in_reply_to
+            && self.text == other.text
+            && self.in_reply_to == other.in_reply_to
     }
 }
 
@@ -235,8 +258,18 @@ impl Decoded {
     }
     pub fn with_target(self, target: Target) -> Self {
         match self {
-            Self::Message(message) => Self::Message(message.with_target(target)),
-            Self::Reaction(reaction) => Self::Reaction(reaction.with_target(target)),
+            Self::Message(message) => {
+                Self::Message(message.with_target(target))
+            }
+            Self::Reaction(reaction) => {
+                Self::Reaction(reaction.with_target(target))
+            }
+        }
+    }
+    pub fn target(&self) -> &Target {
+        match self {
+            Self::Message(message) => &message.target,
+            Self::Reaction(reaction) => &reaction.target,
         }
     }
 }
@@ -980,9 +1013,7 @@ impl From<formatting::Fragment> for Fragment {
 
 fn command_is_action(c: &Command) -> bool {
     match c {
-        Command::PRIVMSG(_, text) | Command::NOTICE(_, text) => {
-            is_action(text)
-        }
+        Command::PRIVMSG(_, text) | Command::NOTICE(_, text) => is_action(text),
         _ => false,
     }
 }
