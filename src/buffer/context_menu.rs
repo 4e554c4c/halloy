@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use chrono::{DateTime, Local, Utc};
 use data::dashboard::BufferAction;
 use data::user::Nick;
@@ -22,6 +24,7 @@ pub enum Context<'a> {
     },
     Timestamp(&'a DateTime<Utc>),
     NotSentMessage(&'a DateTime<Utc>, &'a message::Hash),
+    Message(&'a data::Message),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +50,10 @@ pub enum Entry {
     // not sent message context
     DeleteMessage,
     ResendMessage,
+    // message context
+    React,
+    Reply,
+    Copy,
 }
 
 impl Entry {
@@ -147,6 +154,22 @@ impl Entry {
         }
     }
 
+    pub fn message(
+        reacts_allowed: bool,
+        replies_allowed: bool,
+        //our_user: Option<&User>,
+        //file_transfer_enabled: bool,
+    ) -> Vec<Self> {
+        let mut list = vec![Entry::Copy];
+        if replies_allowed {
+            list.push(Entry::Reply);
+        }
+        if reacts_allowed {
+            list.push(Entry::React);
+        }
+        list
+    }
+
     pub fn view<'a>(
         self,
         context: Option<Context<'_>>,
@@ -159,25 +182,13 @@ impl Entry {
                 let message =
                     Message::Whois(server.clone(), user.nickname().to_owned());
 
-                menu_button(
-                    "Whois".to_string(),
-                    Some(message),
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Whois", Some(message), length, theme, config)
             }
             (Entry::Whowas, Context::User { server, user, .. }) => {
                 let message =
                     Message::Whowas(server.clone(), user.nickname().to_owned());
 
-                menu_button(
-                    "Whowas".to_string(),
-                    Some(message),
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Whowas", Some(message), length, theme, config)
             }
             (Entry::Query, Context::User { server, user, .. }) => {
                 let message = Message::Query(
@@ -186,13 +197,7 @@ impl Entry {
                     config.actions.buffer.message_user,
                 );
 
-                menu_button(
-                    "Message".to_string(),
-                    Some(message),
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Message", Some(message), length, theme, config)
             }
             (
                 Entry::ToggleAccessLevelOp,
@@ -279,13 +284,7 @@ impl Entry {
             (Entry::SendFile, Context::User { server, user, .. }) => {
                 let message = Message::SendFile(server.clone(), user.clone());
 
-                menu_button(
-                    "Send File".to_string(),
-                    Some(message),
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Send File", Some(message), length, theme, config)
             }
             (
                 Entry::UserInfo,
@@ -314,7 +313,7 @@ impl Entry {
                 );
 
                 menu_button(
-                    "Local Time (TIME)".to_string(),
+                    "Local Time (TIME)",
                     Some(message),
                     length,
                     theme,
@@ -330,7 +329,7 @@ impl Entry {
                 );
 
                 menu_button(
-                    "Client (VERSION)".to_string(),
+                    "Client (VERSION)",
                     Some(message),
                     length,
                     theme,
@@ -340,50 +339,26 @@ impl Entry {
             (Entry::CopyUrl, Context::Url { url, .. }) => {
                 let message = Message::CopyUrl(url.to_string());
 
-                menu_button(
-                    "Copy URL".to_string(),
-                    Some(message),
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Copy URL", Some(message), length, theme, config)
             }
             (Entry::OpenUrl, Context::Url { url, .. }) => {
                 let message = Message::OpenUrl(url.to_string());
 
-                menu_button(
-                    "Open URL".to_string(),
-                    Some(message),
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Open URL", Some(message), length, theme, config)
             }
             (Entry::HidePreview, Context::Url { url, message }) => {
                 let message = message.map(|message| {
                     Message::HidePreview(message, url.to_string())
                 });
 
-                menu_button(
-                    "Hide Preview".to_string(),
-                    message,
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Hide Preview", message, length, theme, config)
             }
             (Entry::ShowPreview, Context::Url { url, message }) => {
                 let message = message.map(|message| {
                     Message::ShowPreview(message, url.to_string())
                 });
 
-                menu_button(
-                    "Show Preview".to_string(),
-                    message,
-                    length,
-                    theme,
-                    config,
-                )
+                menu_button("Show Preview", message, length, theme, config)
             }
             (Entry::Timestamp, Context::Timestamp(date_time)) => {
                 let message = Message::CopyTimestamp(
@@ -411,7 +386,7 @@ impl Entry {
                 let message = Message::DeleteMessage(*server_time, *hash);
 
                 menu_button(
-                    "Delete Message".to_string(),
+                    "Delete Message",
                     Some(message),
                     length,
                     theme,
@@ -425,13 +400,40 @@ impl Entry {
                 let message = Message::ResendMessage(*server_time, *hash);
 
                 menu_button(
-                    "Re-send Message".to_string(),
+                    "Re-send Message",
                     Some(message),
                     length,
                     theme,
                     config,
                 )
             }
+            (Entry::Copy, Context::Message(msg)) => menu_button(
+                "Copy",
+                Some(Message::Copy(msg.content.text().to_string())),
+                length,
+                theme,
+                config,
+            ),
+            (
+                Entry::React,
+                Context::Message(data::Message { id: Some(id), .. }),
+            ) => menu_button(
+                "React",
+                Some(Message::React(id.to_owned())),
+                length,
+                theme,
+                config,
+            ),
+            (
+                Entry::Reply,
+                Context::Message(data::Message { id: Some(id), .. }),
+            ) => menu_button(
+                "Reply",
+                Some(Message::Reply(id.to_owned())),
+                length,
+                theme,
+                config,
+            ),
             _ => row![].into(),
         })
     }
@@ -455,6 +457,9 @@ pub enum Message {
     DeleteMessage(DateTime<Utc>, message::Hash),
     #[allow(clippy::enum_variant_names)]
     ResendMessage(DateTime<Utc>, message::Hash),
+    Copy(String),
+    React(message::Id),
+    Reply(message::Id),
 }
 
 #[derive(Debug, Clone)]
@@ -503,7 +508,41 @@ pub fn update(message: Message) -> Event {
         Message::ResendMessage(sesrver_time, hash) => {
             Event::ResendMessage(sesrver_time, hash)
         }
+        Message::Copy(_) => todo!(),
+        Message::React(_) => todo!(),
+        Message::Reply(_) => todo!(),
     }
+}
+
+pub fn message<'a, M>(
+    content: impl Into<Element<'a, M>>,
+    reacts_allowed: bool,
+    replies_allowed: bool,
+    config: &'a Config,
+    theme: &'a Theme,
+    message: &'a data::Message,
+) -> Element<'a, M>
+where
+    M: From<Message> + 'a
+{
+    let entries = Entry::message(reacts_allowed, replies_allowed);
+
+    context_menu(
+        context_menu::MouseButton::default(),
+        context_menu::Anchor::Cursor,
+        context_menu::ToggleBehavior::KeepOpen,
+        content,
+        entries,
+        move |entry, length| {
+            entry.view(
+                Some(Context::Message(message)),
+                length,
+                config,
+                theme,
+            ).map(M::from)
+        },
+    )
+    .into()
 }
 
 pub fn user<'a>(
@@ -617,14 +656,14 @@ pub fn not_sent_message<'a>(
 }
 
 fn menu_button(
-    content: String,
+    content: impl Into<Cow<'static, str>>,
     message: Option<Message>,
     length: Length,
     theme: &Theme,
     config: &Config,
 ) -> Element<'static, Message> {
     button(
-        text(content)
+        text(content.into())
             .style(theme::text::primary)
             .font_maybe(theme::font_style::primary(theme).map(font::get)),
     )

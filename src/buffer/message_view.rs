@@ -407,6 +407,16 @@ impl<'a> ChannelQueryLayout<'a> {
             },
             self.config,
         );
+
+        message_content = context_menu::message::<'a>(
+            message_content,
+            true, // todo
+            true,
+            self.config,
+            self.theme,
+            message,
+        );
+
         if self.config.buffer.channel.message.show_emoji_reacts
             && !message.reactions.is_empty()
         {
